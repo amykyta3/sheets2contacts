@@ -26,7 +26,9 @@ class sheets2contacts(App):
         S = Sheets(credentials, self.options.sheet_id)
         C = Contacts(credentials)
         
-        S.test()
+        print("Printing people!")
+        for P in S.People:
+            print(P.first_name, P.last_name)
         
         """
         Program flow:
