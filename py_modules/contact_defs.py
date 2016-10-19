@@ -12,18 +12,18 @@ class Person:
         self.phone = None
         self.groups = []
     
-    #def __str__(self):
-    #    s = [
-    #        u"%s, %s:" % (self.first_name, self.last_name),
-    #        u"  Nickname: %s" % self.nickname,
-    #        u"  Email: %s" % self.email,
-    #        u"  Phone: %s" % self.phone
-    #    ]
-    #    return("\n".join(s))
+    def __str__(self):
+        s = [
+            "%s %s:" % (self.first_name, self.last_name),
+            "  Nickname: %s" % self.nickname,
+            "  Email: %s" % self.email,
+            "  Phone: %s" % self.phone
+        ]
+        return("\n".join(s))
         
         
 class Group:
-    def __init_(self, name):
+    def __init__(self, name):
         # Google Contact Group entry object
         self.entry = None
         

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import re
 import os
 import sys
 
@@ -21,14 +22,28 @@ class sheets2contacts(App):
     def main(self):
         App.main(self)
         
+        # If no sheet specified, ask
+        if(self.options.sheet_id == None):
+            print("Enter the Google Sheets URL to sync from:")
+            self.options.sheet_id = raw_input('> ')
+        
+        # Sanitize sheet ID URL
+        m = re.search(r'docs.google.com\/spreadsheets\/d\/([^\/]+)\/', self.options.sheet_id)
+        if(m):
+            # --sheet option is a URL. Extract
+            self.options.sheet_id = m.group(1)
         
         credentials = g_auth.get_credentials(self.options)
-        S = Sheets(credentials, self.options.sheet_id)
-        C = Contacts(credentials)
         
-        print("Printing people!")
-        for P in S.People:
-            print(P.first_name, P.last_name)
+        #S = Sheets(credentials, self.options.sheet_id)
+        #print("Printing people!")
+        #for P in S.People:
+        #    print(P.__str__())
+        #print("Printing groups!")
+        #for G in S.Groups:
+        #    print(G.name)
+        
+        C = Contacts(credentials)
         
         """
         Program flow:
