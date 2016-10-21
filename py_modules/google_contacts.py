@@ -19,13 +19,10 @@ class Contacts:
         
         self.log = logging.getLogger("contacts")
         
-        self.Groups = self.fetch_groups()
-        self.People = self.fetch_people()
-        
     #---------------------------------------------------------------------------
     def fetch_groups(self):
         """
-        Get all the contact groups
+        Get all the contact groups in Google Contacts
         """
         Groups = []
         
@@ -46,20 +43,27 @@ class Contacts:
         return(Groups)
     
     #---------------------------------------------------------------------------
-    def fetch_people(self):
+    def fetch_group_entry_by_name(self, group_name):
+        feed = self.contacts_client.GetGroups()
+        for entry in feed.entry:
+            if entry.title.text == group_name:
+                return(entry)
+                
+    #---------------------------------------------------------------------------
+    def fetch_people(self, in_Group=None):
         """
-        Fetch all the contacts that are managed by sheets2contacts
-        These contacts are the ones in the group named "sheets2contacts"
+        Get all the people in Google Contacts.
+        Filter by a specific contacts group using the in_group option
         """
-        
-        grp = self.get_group_by_name("sheets2contacts")
-        if(grp is None):
-            self.log.info("Did not find group 'sheets2contacts'. No exitsting contacts to sync against")
-            return([])
-        
-        query = gdata.contacts.client.ContactsQuery()
-        query.group = grp.entry.id.text
-        feed = self.contacts_client.GetContacts(q=query)
+        if(in_Group):
+            query = gdata.contacts.client.ContactsQuery()
+            if(in_Group.entry is None):
+                in_Group.entry = self.fetch_group_entry_by_name(in_Group.name)
+            query.group = in_Group.entry.id.text
+            feed = self.contacts_client.GetContacts(q=query)
+        else:
+            feed = self.contacts_client.GetContacts()
+            
         People = []
         while(feed):
             if(feed.entry):
@@ -79,15 +83,17 @@ class Contacts:
                     if(entry.nickname is not None):
                         P.nickname = entry.nickname.text
                     
-                    if(len(entry.email) != 0):
-                        P.email = entry.email[0].text
+                    for email in entry.email:
+                        if email.primary and email.primary == 'true':
+                            print(entry.email)
+                            #P.email = entry.email.address
+                            break
                     
                     if(len(entry.phone_number) != 0):
                         P.phone = entry.phone_number[0].text
                     
                     for grp in entry.group_membership_info:
-                        G = self.get_group_by_id(grp.href)
-                        P.groups.append(G)
+                        P._group_hrefs.append(grp.href)
             
             # Traverse to next "page" of feed
             next_link = feed.GetNextLink()
@@ -98,35 +104,108 @@ class Contacts:
         return(People)
         
     #---------------------------------------------------------------------------
-    def get_group_by_name(self, group_name):
+    def resolve_group_refs(self, People, Groups):
         """
-        Lookup a group by name
+        The People list returned from the fetch_people() method have unresolved
+        group membership references.
+        If a list of Groups exists, resolve their references
         """
-        for G in self.Groups:
-            if(G.name == group_name):
-                return(G)
-        return(None)
-    
-    #---------------------------------------------------------------------------
-    def get_group_by_id(self, gid):
-        """
-        Lookup a group by ID
-        """
-        for G in self.Groups:
-            if(G.entry.id.text == gid):
-                return(G)
-        return(None)
+        for P in People:
+            P.groups = []
+            for href in P._group_hrefs:
+                G = contact_defs.get_group_by_id(Groups, href)
+                if(G):
+                    P.groups.append(G)
+            P._group_hrefs = []
         
     #---------------------------------------------------------------------------
-    def create_new_group(self, group_name):
-        grp = gdata.contacts.data.GroupEntry(title=atom.data.Title(text=group_name))
+    def create_new_group(self, Group):
+        """
+        Registers a new group with Google Contacts.
+        """
+        grp = gdata.contacts.data.GroupEntry(title=atom.data.Title(text=Group.name))
         
         entry = self.contacts_client.CreateGroup(grp)
         if(entry is None):
-            self.log.error("Unable to create group '%s'" % group_name)
+            self.log.error("Unable to create group '%s'" % Group.name)
             sys.exit(1)
-            
-        G = contact_defs.Group(group_name)
-        G.entry = entry
-        return(G)
+        
+        Group.entry = entry
+        return(Group)
+
+    #---------------------------------------------------------------------------
+    def update_contact(self, Person):
+        """
+        Updates an existing person in Google Contacts.
+        """
+        if(Person.nickname):
+            Person.entry.nickname = gdata.contacts.data.NickName(text=Person.nickname)
+        
+        if(Person.email):
+            Person.entry.email = [gdata.data.Email(
+                address=Person.email, 
+                primary='true',
+                rel=gdata.data.WORK_REL
+            )]
+        
+        if(Person.phone):
+            Person.entry.phone_number = [gdata.data.PhoneNumber(
+                text=Person.phone,
+                primary='true',
+                rel=gdata.data.WORK_REL
+            )]
+        
+        Person.entry.group_membership_info = []
+        for G in Person.groups:
+            membership = gdata.contacts.data.GroupMembershipInfo(href=G.entry.id.text)
+            Person.entry.group_membership_info.append(membership)
+        
+        self.contacts_client.Update(Person.entry)
+        
+    #---------------------------------------------------------------------------
+    def create_new_contact(self, Person):
+        """
+        Registers a new person with Google Contacts.
+        """
+        new_contact = gdata.contacts.data.ContactEntry(
+            name=gdata.data.Name(
+                given_name=gdata.data.GivenName(text=Person.first_name),
+                family_name=gdata.data.FamilyName(text=Person.last_name)
+            )
+        )
+        
+        if(Person.nickname):
+            new_contact.nickname = gdata.contacts.data.NickName(text=Person.nickname)
+        
+        if(Person.email):
+            new_contact.email = [gdata.data.Email(
+                address=Person.email, 
+                primary='true',
+                rel=gdata.data.WORK_REL
+            )]
+        
+        if(Person.phone):
+            new_contact.phone_number = [gdata.data.PhoneNumber(
+                text=Person.phone,
+                primary='true',
+                rel=gdata.data.WORK_REL
+            )]
+        
+        new_contact.group_membership_info = []
+        for G in Person.groups:
+            membership = gdata.contacts.data.GroupMembershipInfo(href=G.entry.id.text)
+            new_contact.group_membership_info.append(membership)
+        
+        entry = self.contacts_client.CreateContact(new_contact)
+        Person.entry = entry
+        
+        if(not entry):
+            self.log.error("Upload error when creating contact: %s %s" % (Person.first_name, Person.last_name))
+        
+    #---------------------------------------------------------------------------
+    def delete_contact(self, Person):
+        """
+        Deletes a person from Google Contacts.
+        """
+        self.contacts_client.Delete(Person.entry)
         

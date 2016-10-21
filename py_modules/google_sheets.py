@@ -20,14 +20,14 @@ class Sheets:
         self.sheet_id = sheet_id
         self.log = logging.getLogger("sheets")
         
-        # Class properties
-        self.People = []
-        self.Groups = []
-        
+    #---------------------------------------------------------------------------
+    def fetch_sheet_data(self):
+        self.log.info("Fetching contact info from Google Sheets spreadsheet...")
         column_map = self.get_column_map()
         column_data = self.get_column_data(column_map)
-        self.elaborate_column_data(column_data)
-        
+        Groups, People = self.elaborate_column_data(column_data)
+        self.log.info("Found %d contacts in %d groups" % (len(People), len(Groups)))
+        return(Groups, People)
     #---------------------------------------------------------------------------
     def get_column_map(self):
         """
@@ -120,6 +120,9 @@ class Sheets:
         converts the column_data into Person and Group lists
         """
         
+        Groups = []
+        People = []
+        
         # Collect all the groups that exist
         group_names = set()
         group_rows = column_data.get('groups', [])
@@ -132,9 +135,9 @@ class Sheets:
         for group_name in group_names:
             group_name = group_name.strip()
             G = contact_defs.Group(group_name)
-            self.Groups.append(G)
+            Groups.append(G)
             groups_dict[group_name] = G
-        self.log.debug("Received %d unique groups" % len(self.Groups))
+        self.log.debug("Received %d unique groups" % len(Groups))
             
         # Determine number of people (the largest dimension in the table)
         n_people = 0
@@ -159,7 +162,8 @@ class Sheets:
                     group_name = group_name.strip()
                     P.groups.append(groups_dict[group_name])
             
-            self.People.append(P)
+            People.append(P)
+        return(Groups, People)
             
     def get_cell(self, column_data, col, idx, default=None):
         """

@@ -8,7 +8,7 @@ class App:
     self.options = None
     
     """ Message logger """
-    self.log = logging.getLogger(type(self).__name__)
+    self.log = logging.getLogger(self.__class__.__name__)
     logging.basicConfig(
       format="%(levelname)s: %(name)s - %(message)s",
       level=logging.INFO,
