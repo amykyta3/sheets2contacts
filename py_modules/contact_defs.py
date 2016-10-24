@@ -28,8 +28,6 @@ class Person:
         """
         changed = False
         
-        self.log.debug("Updating '%s %s'" % (self.first_name, self.last_name))
-        
         if((P.first_name != None) and (P.first_name != self.first_name)):
             self.log.debug("first_name changed: '%s' --> '%s'" % (self.first_name, P.first_name))
             self.first_name = P.first_name

@@ -85,8 +85,7 @@ class Contacts:
                     
                     for email in entry.email:
                         if email.primary and email.primary == 'true':
-                            print(entry.email)
-                            #P.email = entry.email.address
+                            P.email = email.address
                             break
                     
                     if(len(entry.phone_number) != 0):

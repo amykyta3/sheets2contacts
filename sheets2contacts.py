@@ -53,15 +53,15 @@ class sheets2contacts(App):
         #-----------------------------------------------------------------------
         C = Contacts(credentials)
         cGroups = C.fetch_groups()
-        sheets2contacts_group = cd.get_group_by_name(cGroups, "sheets2contacts")
+        sheets2contacts_group = cd.get_group_by_name(cGroups, "Synced with sheets2contacts")
         if(sheets2contacts_group == None):
             # "sheets2contacts" group doesn't exist. Create it
             cPeople = []
-            sheets2contacts_group = cd.Group("sheets2contacts")
+            sheets2contacts_group = cd.Group("Synced with sheets2contacts")
             if(self.options.dry_run):
-                self.log.info("Would create new contacts group: 'sheets2contacts'")
+                self.log.info("Would create new contacts group: 'Synced with sheets2contacts'")
             else:
-                self.log.info("Creating new contacts group: 'sheets2contacts'")
+                self.log.info("Creating new contacts group: 'Synced with sheets2contacts'")
                 C.create_new_group(sheets2contacts_group)
             cGroups.append(sheets2contacts_group)
         else:
