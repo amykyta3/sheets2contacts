@@ -18,6 +18,8 @@ class sheets2contacts(App):
         
         parser.add_argument('--sheet', dest='sheet_id', default=None,
                             help='Google Sheet ID or URL')
+        parser.add_argument('--email', dest='email', default=None,
+                            help='Email of existing stored credentials to sync to')
         parser.add_argument('-n --dry-run', dest='dry_run', default=False,
                             action="store_true",
                             help='Google Sheet ID or URL')
@@ -29,6 +31,9 @@ class sheets2contacts(App):
         
         logging.getLogger("googleapiclient.discovery").setLevel(logging.WARNING)
         
+        #-----------------------------------------------------------------------
+        # Determine which sheet to sync to
+        #-----------------------------------------------------------------------
         # If no sheet specified, ask
         if(self.options.sheet_id == None):
             print("Enter the Google Sheets URL to sync from:")
@@ -40,7 +45,33 @@ class sheets2contacts(App):
             # --sheet option is a URL. Extract
             self.options.sheet_id = m.group(1)
         
-        credentials = g_auth.get_credentials(self.options)
+        #-----------------------------------------------------------------------
+        # Determine which credentials to use
+        #-----------------------------------------------------------------------
+        credential_dir = os.path.join(os.path.expanduser('~'), '.credentials')
+        
+        if(self.options.email == None):
+            emails = []
+            for f in os.listdir(credential_dir):
+                m = re.search(r'sheets2contacts\.(.+)\.json', f)
+                if(m): emails.append(m.group(1))
+            
+            if(len(emails)):
+                print("Choose which email account to sync to:")
+                for i,e in enumerate(emails):
+                    print("  %d: %s" % (i+1,e))
+                print("  0: Authenticate New")
+                sel = int(raw_input('> '))
+                if(sel > 0 and sel <= len(emails)):
+                    self.options.email = emails[sel-1]
+        
+        if(self.options.email == None):
+            credential_file = None
+        else:
+            credential_file = os.path.join(credential_dir, "sheets2contacts.%s.json" % self.options.email)
+            if(not os.path.exists(credential_file)): credential_file = None
+        
+        credentials = g_auth.get_credentials(self.options, credential_file)
         
         #-----------------------------------------------------------------------
         # Fetch contact data from Google Sheets spreadsheet
