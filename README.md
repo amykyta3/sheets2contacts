@@ -10,7 +10,8 @@ sudo apt-get install python-httplib2 python-oauth2client
 
 ## Set up Google App
 
-* Use the following two wizards to enable the Google Sheets and Google Contacts APIs
+* Use the following wizards to enable the Google Sheets and Google Contacts APIs
+    * https://console.developers.google.com/start/api?id=people.googleapis.com
     * https://console.developers.google.com/start/api?id=sheets.googleapis.com
     * https://console.developers.google.com/start/api?id=contacts-json.googleapis.com
 * Create credentials for the two APIs:
