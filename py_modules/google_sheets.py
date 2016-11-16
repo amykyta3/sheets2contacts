@@ -5,6 +5,7 @@ import logging
 from apiclient import discovery
 import httplib2
 from . import contact_defs
+from pprint import pprint
 
 # register logger
 logging.getLogger("sheets")
@@ -23,9 +24,10 @@ class Sheets:
     #---------------------------------------------------------------------------
     def fetch_sheet_data(self):
         self.log.info("Fetching contact info from Google Sheets spreadsheet...")
-        column_map = self.get_column_map()
+        column_map, group_map = self.get_column_map()
         column_data = self.get_column_data(column_map)
-        Groups, People = self.elaborate_column_data(column_data)
+        group_data = self.get_column_data(group_map)
+        Groups, People = self.elaborate_column_data(column_data, group_data)
         self.log.info("Found %d contacts in %d groups" % (len(People), len(Groups)))
         return(Groups, People)
     #---------------------------------------------------------------------------
@@ -40,7 +42,8 @@ class Sheets:
             "nickname",
             "email",
             "phone",
-            "groups"
+            "groups",
+            "group_columns"
         ]
         
         rangeName = 'sheets2contacts!A2:B'
@@ -67,6 +70,11 @@ class Sheets:
         del(kv_dict['sheet'])
         self.log.debug("Got sheet name: %s" % sheet_name)
         
+        # if group_columns is used, extract that
+        group_columns = kv_dict.get("group_columns", "")
+        del(kv_dict['group_columns'])
+        group_columns = re.split(r'[,;]', group_columns)
+        
         # Fetch sheet headings
         rangeName = sheet_name + "!1:1"
         result = self.sheets_service.spreadsheets().values().get(
@@ -83,7 +91,18 @@ class Sheets:
             kv_dict[k] = "%s!%s2:%s" % (sheet_name, column, column)
             self.log.debug("  %s: %s --> %s" % (k,v,kv_dict[k]))
         
-        return(kv_dict)
+        # Resolve group_columns into group_map
+        group_map = {}
+        for gc in group_columns:
+            gc = gc.strip()
+            if(gc not in headings):
+                self.log.error("Group '%s' not found in headings" % (gc))
+                sys.exit(1)
+            column = idx2col(headings.index(gc))
+            group_map[gc] = "%s!%s2:%s" % (sheet_name, column, column)
+            self.log.debug("  %s --> %s" % (gc,group_map[gc]))
+        
+        return(kv_dict, group_map)
         
     #---------------------------------------------------------------------------
     def get_column_data(self, column_map):
@@ -115,10 +134,39 @@ class Sheets:
         return(column_data)
     
     #---------------------------------------------------------------------------
-    def elaborate_column_data(self, column_data):
+    def get_bool(self, value):
+        def RepresentsInt(s):
+            try: 
+                int(s)
+                return True
+            except ValueError:
+                return False
+        
+        if((type(value) is int) or (RepresentsInt(value))):
+            return(bool(int(value)))
+        elif(type(value) in [str, unicode]):
+            return(value.lower() in ["t", "true", "y", "yes"])
+        else:
+            self.log.error("Internal error: type=%s" % type(value).__name__)
+            sys.exit(1)
+        
+    #---------------------------------------------------------------------------
+    def elaborate_column_data(self, column_data, group_data):
         """
         converts the column_data into Person and Group lists
         """
+        
+        # normalize group_data to bool. Delete any that are all false
+        new_group_data = {}
+        for k in group_data.keys():
+            has_members = False
+            for i,cell in enumerate(group_data[k]):
+                group_data[k][i] = self.get_bool(group_data[k][i])
+                has_members |= group_data[k][i]
+            
+            if(has_members):
+                new_group_data[k] = group_data[k]
+        group_data = new_group_data
         
         Groups = []
         People = []
@@ -128,12 +176,14 @@ class Sheets:
         group_rows = column_data.get('groups', [])
         for row in group_rows:
             group_names |= set(re.split(r'[,;]', row))
+        group_names |= set(group_data.keys())
         
         # Convert groups into Group objects
         # also store into a dict for convenience
         groups_dict = {}
         for group_name in group_names:
             group_name = group_name.strip()
+            if(len(group_name) == 0): continue
             G = contact_defs.Group(group_name)
             Groups.append(G)
             groups_dict[group_name] = G
@@ -160,6 +210,11 @@ class Sheets:
                 group_names = set(re.split(r'[,;]', groups_str))
                 for group_name in group_names:
                     group_name = group_name.strip()
+                    if(len(group_name) == 0): continue
+                    P.groups.append(groups_dict[group_name])
+            for group_name in group_data.keys():
+                is_member = self.get_cell(group_data, group_name, i, False)
+                if(is_member):
                     P.groups.append(groups_dict[group_name])
             
             People.append(P)

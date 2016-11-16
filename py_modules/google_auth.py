@@ -54,7 +54,6 @@ def get_credentials(flags, file_path = None):
         P = People(credentials)
         new_credentials_file = "sheets2contacts.%s.json" % P.get_email_address()
         new_credentials_path = os.path.join(credential_dir,new_credentials_file)
-        print("renaming:", file_path, new_credentials_path)
         os.rename(file_path, new_credentials_path)
         
     return(credentials)
