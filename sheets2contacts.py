@@ -82,6 +82,8 @@ class sheets2contacts(App):
         #-----------------------------------------------------------------------
         # Fetch contact data from Google Contacts (only ones in sheets2contacts group)
         #-----------------------------------------------------------------------
+        self.log.info("Fetching existing contacts from Google Contacts...")
+        groups_to_create = []
         C = Contacts(credentials)
         cGroups = C.fetch_groups()
         sheets2contacts_group = cd.get_group_by_name(cGroups, "Synced with sheets2contacts")
@@ -89,18 +91,14 @@ class sheets2contacts(App):
             # "sheets2contacts" group doesn't exist. Create it
             cPeople = []
             sheets2contacts_group = cd.Group("Synced with sheets2contacts")
-            if(self.options.dry_run):
-                self.log.info("Would create new contacts group: 'Synced with sheets2contacts'")
-            else:
-                self.log.info("Creating new contacts group: 'Synced with sheets2contacts'")
-                C.create_new_group(sheets2contacts_group)
+            groups_to_create.append(sheets2contacts_group)
             cGroups.append(sheets2contacts_group)
         else:
             cPeople = C.fetch_people(in_Group=sheets2contacts_group)
             C.resolve_group_refs(cPeople, cGroups)
         
         #-----------------------------------------------------------------------
-        # Create new contact groups if necessary
+        # Determine which groups need to be created
         #-----------------------------------------------------------------------
         new_groups = []
         for sG in sGroups:
@@ -109,13 +107,22 @@ class sheets2contacts(App):
                     break
             else:
                 # Group was not found. Create a new one
-                if(self.options.dry_run):
-                    self.log.info("Would create new contacts group: '%s'" % sG.name)
-                else:
-                    self.log.info("Creating new contacts group: '%s'" % sG.name)
-                    C.create_new_group(sG)
                 new_groups.append(sG)
+        
         cGroups.extend(new_groups)
+        groups_to_create.extend(new_groups)
+        
+        #-----------------------------------------------------------------------
+        # Submit new groups to Google
+        #-----------------------------------------------------------------------
+        if(self.options.dry_run):
+            self.log.info("Would create %d new groups..." % len(groups_to_create))
+        else:
+            self.log.info("Creating %d new groups..." % len(groups_to_create))
+            C.batch_create_groups(groups_to_create)
+        
+        for G in groups_to_create:
+            self.log.debug("  %s" % G.name)
         
         #-----------------------------------------------------------------------
         # Update group references for people from sheets to use actuals
@@ -137,6 +144,9 @@ class sheets2contacts(App):
         #-----------------------------------------------------------------------
         # Update contacts as necessary
         #-----------------------------------------------------------------------
+        contacts_to_update = []
+        contacts_to_create = []
+        
         while(len(sPeople)):
             P = sPeople.pop()
             for cP in cPeople:
@@ -144,37 +154,42 @@ class sheets2contacts(App):
                     # Found match! Update
                     changed = cP.update(P)
                     if(changed):
-                        # transmit updated person to the google
-                        if(self.options.dry_run):
-                            self.log.info("Would update contact: '%s %s'" % (cP.first_name, cP.last_name))
-                        else:
-                            self.log.info("Updating contact: '%s %s'" % (cP.first_name, cP.last_name))
-                            C.update_contact(cP)
+                        contacts_to_update.append(cP)
+                        
                     
                     # Contact was handled. remove
                     cPeople.remove(cP)
                     break
             else:
                 # Person not found in existing contacts.
-                # Create new and transmit new person to the google
-                if(self.options.dry_run):
-                    self.log.info("Would create contact: '%s %s'" % (P.first_name, P.last_name))
-                else:
-                    self.log.info("Creating contact: '%s %s'" % (P.first_name, P.last_name))
-                    C.create_new_contact(P)
+                contacts_to_create.append(P)
+                
         
         #-----------------------------------------------------------------------
         # Any contacts left over in cPeople are ones that were not in the sheet
         # Delete them
         #-----------------------------------------------------------------------
-        for cP in cPeople:
-            # Delete contact from the google
-            if(self.options.dry_run):
-                self.log.info("Would delete contact: '%s %s'" % (cP.first_name, cP.last_name))
-            else:
-                self.log.info("Deleting contact: '%s %s'" % (cP.first_name, cP.last_name))
-                C.delete_contact(cP)
+        contacts_to_delete = cPeople
     
+        #-----------------------------------------------------------------------
+        # Submit updates to Google
+        #-----------------------------------------------------------------------
+        if(self.options.dry_run):
+            self.log.info("Would create %d, update %d, delete %d contacts ..." % (
+                len(contacts_to_create), len(contacts_to_update), len(contacts_to_delete)
+            ))
+        else:
+            self.log.info("Creating %d, updating %d, deleting %d contacts ..." % (
+                len(contacts_to_create), len(contacts_to_update), len(contacts_to_delete)
+            ))
+            
+            C.batch_contacts_job(
+                create=contacts_to_create,
+                update=contacts_to_update,
+                delete=contacts_to_delete
+            )
+        
+        
 ################################################################################
 if __name__ == '__main__':
     A = sheets2contacts()

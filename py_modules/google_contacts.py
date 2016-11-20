@@ -38,7 +38,7 @@ class Contacts:
             next_link = feed.GetNextLink()
             feed = None
             if(next_link):
-                feed = self.gd_client.GetContacts(uri=next_link.href)
+                feed = self.contacts_client.GetContacts(uri=next_link.href)
         
         return(Groups)
     
@@ -98,7 +98,7 @@ class Contacts:
             next_link = feed.GetNextLink()
             feed = None
             if(next_link):
-                feed = self.gd_client.GetContacts(uri=next_link.href)
+                feed = self.contacts_client.GetContacts(uri=next_link.href)
         
         return(People)
         
@@ -130,13 +130,38 @@ class Contacts:
             sys.exit(1)
         
         Group.entry = entry
-        return(Group)
 
     #---------------------------------------------------------------------------
-    def update_contact(self, Person):
-        """
-        Updates an existing person in Google Contacts.
-        """
+    def batch_create_groups(self, Groups):
+        batches = split_list(Groups, 100)
+        for Groups in batches:
+            req_feed = gdata.contacts.data.GroupsFeed()
+            for i,G in enumerate(Groups):
+                grp = gdata.contacts.data.GroupEntry(title=atom.data.Title(text=G.name))
+                req_feed.AddInsert(entry=grp, batch_id_string=str(i))
+            
+            resp_feed = self.contacts_client.ExecuteBatch(req_feed,
+                'https://www.google.com/m8/feeds/groups/default/full/batch')
+            while(resp_feed):
+                if(resp_feed.entry):
+                    for entry in resp_feed.entry:
+                        idx = int(entry.batch_id.text)
+                        Groups[idx].entry = entry
+                        
+                        self.log.debug('%s: %s (%s)' % (
+                            entry.batch_id.text,
+                            entry.batch_status.code,
+                            entry.batch_status.reason
+                        ))
+                        
+                # Traverse to next "page" of resp_feed
+                next_link = resp_feed.GetNextLink()
+                resp_feed = None
+                if(next_link):
+                    resp_feed = self.contacts_client.GetContacts(uri=next_link.href)
+        
+    #---------------------------------------------------------------------------
+    def _update_ContactEntry(self, Person):
         if(Person.nickname):
             Person.entry.nickname = gdata.contacts.data.NickName(text=Person.nickname)
         
@@ -159,13 +184,16 @@ class Contacts:
             membership = gdata.contacts.data.GroupMembershipInfo(href=G.entry.id.text)
             Person.entry.group_membership_info.append(membership)
         
+    #---------------------------------------------------------------------------
+    def update_contact(self, Person):
+        """
+        Updates an existing person in Google Contacts.
+        """
+        self._update_ContactEntry(Person)
         self.contacts_client.Update(Person.entry)
         
     #---------------------------------------------------------------------------
-    def create_new_contact(self, Person):
-        """
-        Registers a new person with Google Contacts.
-        """
+    def _create_ContactEntry(self, Person):
         new_contact = gdata.contacts.data.ContactEntry(
             name=gdata.data.Name(
                 given_name=gdata.data.GivenName(text=Person.first_name),
@@ -195,6 +223,14 @@ class Contacts:
             membership = gdata.contacts.data.GroupMembershipInfo(href=G.entry.id.text)
             new_contact.group_membership_info.append(membership)
         
+        return(new_contact)
+    #---------------------------------------------------------------------------
+    def create_new_contact(self, Person):
+        """
+        Registers a new person with Google Contacts.
+        """
+        new_contact = self._create_ContactEntry(Person)
+        
         entry = self.contacts_client.CreateContact(new_contact)
         Person.entry = entry
         
@@ -208,3 +244,96 @@ class Contacts:
         """
         self.contacts_client.Delete(Person.entry)
         
+    #---------------------------------------------------------------------------
+    def batch_contacts_job(self, create = [], update = [], delete = []):
+        
+        # Combine all requests into one big list to process.
+        # Keep track of what the operation type is with tuple
+        requests = []
+        for P in create:
+            requests.append(("create",P))
+        for P in update:
+            requests.append(("update",P))
+        for P in delete:
+            requests.append(("delete",P))
+        
+        # Process in batches. Google only allows 100 operations per batch
+        batches = split_list(requests, 100)
+        for request_batch in batches:
+            request_feed = gdata.contacts.data.ContactsFeed()
+            
+            for i,(req_type,P) in enumerate(request_batch):
+                if(req_type == "create"):
+                    new_c = self._create_ContactEntry(P)
+                    request_feed.AddInsert(entry=new_c, batch_id_string=str(i))
+                elif(req_type == "update"):
+                    self._update_ContactEntry(P)
+                    request_feed.AddUpdate(entry=P.entry, batch_id_string=str(i))
+                elif(req_type == "delete"):
+                    request_feed.AddDelete(entry=P.entry, batch_id_string=str(i))
+                    
+            # submit the batch request to the server. (use patched method)
+            resp_feed = patched_post(self.contacts_client, request_feed,
+                'https://www.google.com/m8/feeds/contacts/default/full/batch')
+            #resp_feed = self.contacts_client.ExecuteBatch(request_feed,
+            #    'https://www.google.com/m8/feeds/contacts/default/full/batch')
+            
+            while(resp_feed):
+                if(resp_feed.entry):
+                    for entry in resp_feed.entry:
+                        idx = int(entry.batch_id.text)
+                        if(request_batch[idx][0] == "create"):
+                            request_batch[idx][1].entry = entry
+                        
+                        self.log.debug('%s: %s (%s)' % (
+                            entry.batch_id.text,
+                            entry.batch_status.code,
+                            entry.batch_status.reason
+                        ))
+
+                        
+                # Traverse to next "page" of resp_feed
+                next_link = resp_feed.GetNextLink()
+                resp_feed = None
+                if(next_link):
+                    resp_feed = self.contacts_client.GetContacts(uri=next_link.href)
+        
+def split_list(l, n):
+    """
+    Splits a list into sublists, ensuring each sublist doesn't exceed n items
+    For example, input:
+        l = [1,2,3,4,5,6,7,8,9,10], n = 3
+    output:
+        [[1,2,3],[4,5,6],[7,8,9],[10]]
+    """
+    new_l = []
+    while(len(l) > n):
+        new_l.append(l[:n])
+        l = l[n:]
+    if(len(l)): new_l.append(l)
+    return(new_l)
+
+
+def patched_post(client, entry, uri, auth_token=None, converter=None, desired_class=None, **kwargs):
+    """
+    ExecuteBatch() has a bug when handling Update and Delete jobs.
+    This is the workaround function as described here:
+    http://stackoverflow.com/questions/23576729/getting-if-match-or-if-none-match-header-or-entry-etag-attribute-required-erro
+    
+    When it comes time to do a batched delete/updatem instead of calling
+    client.ExecuteBatch, instead directly call patched_post:
+        patched_post(client_instance, entry_feed,
+            'https://www.google.com/m8/feeds/contacts/default/full/batch')
+    """
+    
+    if converter is None and desired_class is None:
+        desired_class = entry.__class__
+    http_request = atom.http_core.HttpRequest()
+    entry_string = entry.to_string(gdata.client.get_xml_version(client.api_version))
+    entry_string = entry_string.replace('ns1', 'gd')  # where the magic happens
+    http_request.add_body_part(
+        entry_string,
+        'application/atom+xml')
+    return client.request(method='POST', uri=uri, auth_token=auth_token,
+                          http_request=http_request, converter=converter,
+                          desired_class=desired_class, **kwargs)
