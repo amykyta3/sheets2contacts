@@ -76,13 +76,15 @@ class sheets2contacts(App):
         #-----------------------------------------------------------------------
         # Fetch contact data from Google Sheets spreadsheet
         #-----------------------------------------------------------------------
+        self.log.info("Fetching contact info from Google Sheets spreadsheet...")
         S = Sheets(credentials, self.options.sheet_id)
         sGroups, sPeople = S.fetch_sheet_data()
+        self.log.info("Found %d contacts and %d groups" % (len(sPeople), len(sGroups)))
         
         #-----------------------------------------------------------------------
         # Fetch contact data from Google Contacts (only ones in sheets2contacts group)
         #-----------------------------------------------------------------------
-        self.log.info("Fetching existing contacts from Google Contacts...")
+        self.log.info("Fetching existing synced contacts from Google Contacts...")
         groups_to_create = []
         C = Contacts(credentials)
         cGroups = C.fetch_groups()
@@ -96,7 +98,7 @@ class sheets2contacts(App):
         else:
             cPeople = C.fetch_people(in_Group=sheets2contacts_group)
             C.resolve_group_refs(cPeople, cGroups)
-        
+        self.log.info("Found %d contacts and %d groups" % (len(cPeople), len(cGroups)))
         #-----------------------------------------------------------------------
         # Determine which groups need to be created
         #-----------------------------------------------------------------------
@@ -107,6 +109,7 @@ class sheets2contacts(App):
                     break
             else:
                 # Group was not found. Create a new one
+                self.log.debug("Need to create group: '%s'" % sG.name)
                 new_groups.append(sG)
         
         cGroups.extend(new_groups)
@@ -154,6 +157,7 @@ class sheets2contacts(App):
                     # Found match! Update
                     changed = cP.update(P)
                     if(changed):
+                        self.log.debug("Need to update: '%s %s'" % (cP.first_name, cP.last_name))
                         contacts_to_update.append(cP)
                         
                     
@@ -162,6 +166,7 @@ class sheets2contacts(App):
                     break
             else:
                 # Person not found in existing contacts.
+                self.log.debug("Need to create: '%s %s'" % (P.first_name, P.last_name))
                 contacts_to_create.append(P)
                 
         
@@ -170,7 +175,10 @@ class sheets2contacts(App):
         # Delete them
         #-----------------------------------------------------------------------
         contacts_to_delete = cPeople
-    
+        
+        for PD in contacts_to_delete:
+            self.log.debug("Need to delete: '%s %s'" % (PD.first_name, PD.last_name))
+        
         #-----------------------------------------------------------------------
         # Submit updates to Google
         #-----------------------------------------------------------------------

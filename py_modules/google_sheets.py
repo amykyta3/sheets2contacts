@@ -23,12 +23,10 @@ class Sheets:
         
     #---------------------------------------------------------------------------
     def fetch_sheet_data(self):
-        self.log.info("Fetching contact info from Google Sheets spreadsheet...")
         column_map, group_map = self.get_column_map()
         column_data = self.get_column_data(column_map)
         group_data = self.get_column_data(group_map)
         Groups, People = self.elaborate_column_data(column_data, group_data)
-        self.log.info("Found %d contacts in %d groups" % (len(People), len(Groups)))
         return(Groups, People)
     #---------------------------------------------------------------------------
     def get_column_map(self):
@@ -228,7 +226,12 @@ class Sheets:
         if(idx >= len(column)):
             return(default)
         else:
-            return(column[idx])
+            cell = column[idx]
+            if((type(cell) == str) or (type(cell) == unicode)):
+                cell = cell.strip()
+                if(cell == ""):
+                    return(None)
+            return(cell)
     
     
 def idx2col(idx):

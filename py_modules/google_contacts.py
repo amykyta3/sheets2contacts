@@ -29,6 +29,7 @@ class Contacts:
         feed = self.contacts_client.GetGroups()
         while(feed):
             if(feed.entry):
+                self.log.debug("current feed has %d entries" % len(feed.entry))
                 for entry in feed.entry:
                     G = contact_defs.Group(entry.title.text)
                     G.entry = entry
@@ -38,6 +39,7 @@ class Contacts:
             next_link = feed.GetNextLink()
             feed = None
             if(next_link):
+                self.log.debug("Traversing to next feed page")
                 feed = self.contacts_client.GetContacts(uri=next_link.href)
         
         return(Groups)
@@ -54,19 +56,25 @@ class Contacts:
         """
         Get all the people in Google Contacts.
         Filter by a specific contacts group using the in_group option
+        
+        FYI: It was discovered that the "next" link is not given if the last
+        page in the feed only has 1 item. Instead of relying on the "next" href
+        mechanism, pages are traversed manually
         """
+        query = gdata.contacts.client.ContactsQuery()
+        query.max_results=100
+        query.start_index=1
         if(in_Group):
-            query = gdata.contacts.client.ContactsQuery()
             if(in_Group.entry is None):
                 in_Group.entry = self.fetch_group_entry_by_name(in_Group.name)
             query.group = in_Group.entry.id.text
-            feed = self.contacts_client.GetContacts(q=query)
-        else:
-            feed = self.contacts_client.GetContacts()
             
         People = []
-        while(feed):
+        while(1):
+            self.log.debug("Fetching feed starting at index: %d" % query.start_index)
+            feed = self.contacts_client.GetContacts(q=query)
             if(feed.entry):
+                self.log.debug("current feed has %d entries" % len(feed.entry))
                 for entry in feed.entry:
                     P = contact_defs.Person()
                     P.entry = entry
@@ -95,11 +103,11 @@ class Contacts:
                         P._group_hrefs.append(grp.href)
             
             # Traverse to next "page" of feed
-            next_link = feed.GetNextLink()
-            feed = None
-            if(next_link):
-                feed = self.contacts_client.GetContacts(uri=next_link.href)
-        
+            total_results = int(feed.total_results.text)
+            query.start_index += query.max_results
+            if(query.start_index > total_results):
+                break;
+
         return(People)
         
     #---------------------------------------------------------------------------
@@ -158,6 +166,7 @@ class Contacts:
                 next_link = resp_feed.GetNextLink()
                 resp_feed = None
                 if(next_link):
+                    self.log.debug("Traversing to next feed page")
                     resp_feed = self.contacts_client.GetContacts(uri=next_link.href)
         
     #---------------------------------------------------------------------------
@@ -296,6 +305,7 @@ class Contacts:
                 next_link = resp_feed.GetNextLink()
                 resp_feed = None
                 if(next_link):
+                    self.log.debug("Traversing to next feed page")
                     resp_feed = self.contacts_client.GetContacts(uri=next_link.href)
         
 def split_list(l, n):
